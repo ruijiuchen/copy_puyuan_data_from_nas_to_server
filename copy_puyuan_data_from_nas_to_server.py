@@ -67,9 +67,10 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
     tag = f"[{channel_name}]" if channel_name else ""
     complete_size_bytes = int(complete_size_gb * 1024 * 1024 * 1024)
 
-    if not os.path.isdir(source_dir):
+    while not os.path.isdir(source_dir):
         _tprint(f"{tag} 错误：源目录不存在 -> {source_dir}")
-        return
+        _tprint(f"{tag} 10秒后重新检查...\n")
+        time.sleep(10)
 
     os.makedirs(target_dir, exist_ok=True)
 
