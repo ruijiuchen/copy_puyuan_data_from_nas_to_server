@@ -148,6 +148,16 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
         _tprint(f"{tag} 10秒后重新检查...\n")
         time.sleep(10)
 
+    # 启动时总是检查最新目录，如果当前不是最新则直接跳到最新
+    if os.path.isdir(source_parent):
+        latest_basename = _find_last_dir_basename(source_parent)
+        if latest_basename:
+            cur_basename = os.path.basename(source_dir.rstrip('/\\'))
+            if latest_basename != cur_basename:
+                source_dir = os.path.join(source_parent, latest_basename)
+                target_dir = os.path.join(target_parent, latest_basename)
+                _tprint(f"{tag} 启动时跳转到最新目录：{latest_basename}\n")
+
     os.makedirs(target_dir, exist_ok=True)
 
     no_file_count = 0  # 连续未检测到新文件的次数
