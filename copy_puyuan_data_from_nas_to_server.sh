@@ -1,0 +1,3 @@
+python copy_puyuan_data_from_nas_to_server.py \
+  --channel "name=PY84ch1,source=/mnt/nas84/raw_data/puyuan84_test/Data/ch1/8478_TestModePY84_26-06-14_13-53-07,target=/mnt/data1/raw_data/puyuan84_test/Data/ch1/8478_TestModePY84_26-06-14_13-53-07,prefix=PY84ch1_,size_gb=1.0078,auto_next=yes" \
+  --channel "name=PY84ch2,source=/mnt/nas84/raw_data/puyuan84_test/Data/ch2/8478_TestModePY84_26-06-14_13-53-07,target=/mnt/data1/raw_data/puyuan84_test/Data/ch2/8478_TestModePY84_26-06-14_13-53-07,prefix=PY84ch2_,size_gb=1.0078,auto_next=yes"
