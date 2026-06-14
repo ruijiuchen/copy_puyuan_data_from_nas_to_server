@@ -11,6 +11,9 @@ import threading
 
 _AUTO_NEXT_NO_FILE_LIMIT = 2  # 连续 2 次（30s × 2 = 1 分钟）未检测到新文件，触发 auto-next
 
+# 无数据通道自动关闭
+_NO_DATA_RETIRE_LIMIT = 3  # 连续 3 次（30s × 3 = 90 秒）未检测到序号0文件，判定该通道无数据并关闭
+
 # 磁盘空间阈值
 _DISK_FREEZE_PCT = 0.05       # 剩余空间 < 5% 时暂停拷贝
 _DISK_WARN_PCT = 0.10         # 剩余空间 < 10% 时发出警告
@@ -171,6 +174,7 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
     # 用于跟踪文件大小是否长时间不变（检测采集系统最后一个未完整写入的文件）
     _size_monitor = {}  # {index: {"last_size": int, "unchanged_count": int}}
     _disk_check_cnt = 0  # 磁盘空间检查计数器
+    _no_data_retire_cnt = 0  # 连续未检测到序号0文件的次数
 
     while True:
         filename = f'{file_prefix}{current_index}.data'
@@ -181,6 +185,18 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
         if not os.path.exists(source_file):
             _tprint(f"{tag} [{current_index}] 文件尚未生成：{filename}")
             _tprint(f"{tag}   源路径: {source_file}")
+
+            # 序号 0 文件连续多次未出现 → 该通道无数据，关闭
+            if current_index == 0:
+                _no_data_retire_cnt += 1
+                _tprint(f"{tag}   无数据计数器: {_no_data_retire_cnt}/{_NO_DATA_RETIRE_LIMIT}")
+                if _no_data_retire_cnt >= _NO_DATA_RETIRE_LIMIT:
+                    _tprint(f"{tag} ⚠️  连续 {_NO_DATA_RETIRE_LIMIT} 次未检测到序号0文件，"
+                            f"判定该通道无数据，关闭通道")
+                    return
+            else:
+                _no_data_retire_cnt = 0
+
             no_file_count += 1
             if auto_next and no_file_count >= _AUTO_NEXT_NO_FILE_LIMIT:
                 # 切换到下一个目录
@@ -194,6 +210,7 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
                     _size_monitor.clear()
                     current_index = 0
                     no_file_count = 0
+                    _no_data_retire_cnt = 0
                     progress_file = os.path.join(target_dir, 'progress.txt')
                     continue
                 else:
@@ -252,11 +269,11 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
                 _tprint(f"{tag}   源路径: {source_file}")
                 _tprint(f"{tag}   当前大小: {current_size_gb:.4f} GB (需 >= {complete_size_gb} GB)")
                 if unchanged > 0:
-                    _tprint(f"{tag}   文件大小已 {unchanged}/6 次未变化 (持续 {unchanged * 10} 秒)")
+                    _tprint(f"{tag}   文件大小已 {unchanged}/3 次未变化 (持续 {unchanged * 10} 秒)")
 
-                if unchanged >= 6:
-                    # 连续 6 次大小不变（60 秒），判定为采集结束的最后一个文件
-                    _tprint(f"{tag}   → 文件大小连续 6 次未变化，判定为最后一个文件，开始拷贝")
+                if unchanged >= 3:
+                    # 连续 3 次大小不变（30 秒），判定为采集结束的最后一个文件
+                    _tprint(f"{tag}   → 文件大小连续 3 次未变化，判定为最后一个文件，开始拷贝")
                 else:
                     _tprint(f"{tag}   10秒后重新检查...\n")
                     time.sleep(10)
