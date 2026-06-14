@@ -11,6 +11,11 @@ import threading
 
 _AUTO_NEXT_NO_FILE_LIMIT = 2  # 连续 2 次（30s × 2 = 1 分钟）未检测到新文件，触发 auto-next
 
+# 磁盘空间阈值
+_DISK_FREEZE_PCT = 0.05       # 剩余空间 < 5% 时暂停拷贝
+_DISK_WARN_PCT = 0.10         # 剩余空间 < 10% 时发出警告
+_DISK_CHECK_INTERVAL = 10      # 磁盘空间检查间隔（多少次拷贝后检查一次）
+
 
 def _find_next_dir_basename(current_dir: str):
     """
@@ -79,6 +84,36 @@ def _tprint(*args, **kwargs):
         print(*args, **kwargs)
 
 
+def _check_disk_space(target_dir: str, complete_size_gb: float, tag: str) -> bool:
+    """
+    检查目标目录所在磁盘的剩余空间。
+    - 剩余 < 5% 时返回 False（暂停拷贝）
+    - 剩余 < 10% 时输出警告
+    总是输出剩余空间和可存储文件数。
+    返回 True 表示可以继续拷贝，False 表示空间不足需等待。
+    """
+    try:
+        usage = shutil.disk_usage(os.path.dirname(target_dir))
+        free_gb = usage.free / (1024 ** 3)
+        total_gb = usage.total / (1024 ** 3)
+        free_pct = usage.free / usage.total
+        can_store = int(usage.free / (complete_size_gb * 1024 ** 3))
+
+        _tprint(f"{tag}   磁盘剩余: {free_gb:.2f} GB / {total_gb:.2f} GB ({free_pct*100:.1f}%)"
+                f"，还可存储约 {can_store} 个完整文件")
+
+        if free_pct < _DISK_FREEZE_PCT:
+            _tprint(f"{tag}   ⚠️  磁盘剩余空间不足 5%，暂停拷贝，等待释放空间...")
+            return False
+        elif free_pct < _DISK_WARN_PCT:
+            _tprint(f"{tag}   ⚠️  警告：磁盘剩余空间不足 10%")
+
+        return True
+    except Exception as e:
+        _tprint(f"{tag}   获取磁盘空间信息失败: {e}")
+        return True
+
+
 def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb: float,
                              file_prefix: str = "PY82ch1_", auto_next: bool = False,
                              channel_name: str = ""):
@@ -135,6 +170,7 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
 
     # 用于跟踪文件大小是否长时间不变（检测采集系统最后一个未完整写入的文件）
     _size_monitor = {}  # {index: {"last_size": int, "unchanged_count": int}}
+    _disk_check_cnt = 0  # 磁盘空间检查计数器
 
     while True:
         filename = f'{file_prefix}{current_index}.data'
@@ -239,6 +275,14 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
         _tprint(f"{tag}   源文件: {source_file}")
         _tprint(f"{tag}   目标文件: {target_file}")
         _tprint(f"{tag}   文件大小: {current_size_gb:.4f} GB")
+
+        # 检查磁盘空间（每 _DISK_CHECK_INTERVAL 次拷贝检查一次）
+        _disk_check_cnt += 1
+        if _disk_check_cnt >= _DISK_CHECK_INTERVAL:
+            _disk_check_cnt = 0
+            while not _check_disk_space(target_dir, complete_size_gb, tag):
+                _tprint(f"{tag}   30秒后重新检查磁盘空间...\n")
+                time.sleep(30)
 
         start_time = time.time()
 
