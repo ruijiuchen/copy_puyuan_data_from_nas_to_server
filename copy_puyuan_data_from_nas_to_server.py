@@ -224,27 +224,16 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
                     progress_file = os.path.join(target_dir, 'progress.txt')
                     continue
                 else:
-                    # 没有更多序号目录 → 持续检查父目录是否有新目录出现
-                    _tprint(f"{tag}   → 当前目录数据已拷贝完毕，等待新实验目录...")
-                    while True:
-                        time.sleep(30)
-                        new_basename = _find_last_dir_basename(source_parent)
-                        if new_basename:
-                            cur_basename = os.path.basename(source_dir.rstrip('/\\'))
-                            if new_basename != cur_basename:
-                                source_dir = os.path.join(source_parent, new_basename)
-                                target_dir = os.path.join(target_parent, new_basename)
-                                os.makedirs(target_dir, exist_ok=True)
-                                _tprint(f"{tag}   → 检测到新目录：{new_basename}，切换\n")
-                                # 重置状态
-                                _size_monitor.clear()
-                                current_index = 0
-                                no_file_count = 0
-                                _no_data_retire_cnt = 0
-                                progress_file = os.path.join(target_dir, 'progress.txt')
-                                break
-                    continue
+                    # 没有更高序号目录 → 当前实验仍在进行中，继续监控当前目录
+                    _tprint(f"{tag}   当前目录仍是最新实验，继续等待新文件...")
+                    no_file_count = 0
             else:
+                # 等待期间也检查是否有新目录出现
+                if auto_next and no_file_count > 0:
+                    check_next = _find_next_dir_basename(source_dir)
+                    if check_next:
+                        # 确实有下一个目录了，快速推进到下一个循环立即处理
+                        no_file_count = _AUTO_NEXT_NO_FILE_LIMIT
                 _tprint(f"{tag}   等待新文件... (30秒后重新检查)\n")
             time.sleep(30)
             continue
