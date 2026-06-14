@@ -43,6 +43,32 @@ def _find_next_dir_basename(current_dir: str):
         pass
     return next_basename
 
+
+def _find_first_dir_basename(parent_dir: str):
+    """
+    在 parent_dir 中找数字前缀最小的子目录。
+    如 "/mnt/data/ch1/" 下有 "8500_TestMode_...", "8501_TestMode_..."，
+    则返回 "8500_TestMode_..."。
+    返回目录 basename，找不到返回 None。
+    """
+    first_basename = None
+    first_num = None
+    try:
+        for entry in sorted(os.listdir(parent_dir)):
+            entry_path = os.path.join(parent_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            e_parts = entry.split('_')
+            if not e_parts or not e_parts[0].isdigit():
+                continue
+            num = int(e_parts[0])
+            if first_num is None or num < first_num:
+                first_num = num
+                first_basename = entry
+    except Exception:
+        pass
+    return first_basename
+
 # 线程锁，防止多通道打印内容交错
 _print_lock = threading.Lock()
 
@@ -67,16 +93,25 @@ def copy_files_with_progress(source_dir: str, target_dir: str, complete_size_gb:
     tag = f"[{channel_name}]" if channel_name else ""
     complete_size_bytes = int(complete_size_gb * 1024 * 1024 * 1024)
 
+    # auto-next: 记录原始父目录，用于切换到下一个目录
+    source_parent = os.path.dirname(source_dir.rstrip('/\\'))
+    target_parent = os.path.dirname(target_dir.rstrip('/\\'))
+
     while not os.path.isdir(source_dir):
+        # 先检查父目录下是否有已创建的新目录，自动切过去
+        if os.path.isdir(source_parent):
+            first_basename = _find_first_dir_basename(source_parent)
+            if first_basename:
+                source_dir = os.path.join(source_parent, first_basename)
+                target_dir = os.path.join(target_parent, first_basename)
+                _tprint(f"{tag} 检测到新目录：{first_basename}，自动切换\n")
+                break
         _tprint(f"{tag} 错误：源目录不存在 -> {source_dir}")
         _tprint(f"{tag} 10秒后重新检查...\n")
         time.sleep(10)
 
     os.makedirs(target_dir, exist_ok=True)
 
-    # auto-next: 记录原始父目录，用于切换到下一个目录
-    source_parent = os.path.dirname(source_dir.rstrip('/\\'))
-    target_parent = os.path.dirname(target_dir.rstrip('/\\'))
     no_file_count = 0  # 连续未检测到新文件的次数
 
     progress_file = os.path.join(target_dir, 'progress.txt')
